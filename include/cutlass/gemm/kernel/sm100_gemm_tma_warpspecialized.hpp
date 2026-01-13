@@ -403,7 +403,6 @@ public:
   CUTLASS_DEVICE
   void
   operator() (Params const& params, char* smem_buf) {
-
     using namespace cute;
     using X = Underscore;
 

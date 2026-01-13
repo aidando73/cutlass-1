@@ -698,7 +698,7 @@ sm100_make_blockscaled_1sm_trivial_tiled_mma() {
 
   // Do not allow a tiled MMA N mode > 1, as that is not reasonable.
   constexpr int N = cute::size<1>(TileShape_MNK{});
-  static_assert(N == 64 || N == 128 || N == 192 || N == 256, "Invalid TileShape_N.");
+  static_assert(N == 8 || N == 16 || N == 32 || N == 64 || N == 128 || N == 192 || N == 256, "Invalid TileShape_N.");
 
   using ElementSFA = typename detail::blockscaled::blockscaled_type<BuilderScheduleTag, ElementPairA>::sf_type;
   using ElementSFB = typename detail::blockscaled::blockscaled_type<BuilderScheduleTag, ElementPairB>::sf_type;
@@ -758,7 +758,7 @@ sm100_make_blockscaled_2sm_trivial_tiled_mma() {
 
   // Do not allow a tiled MMA N mode > 1, as that is not reasonable.
   constexpr int N = cute::size<1>(TileShape_MNK{});
-  static_assert(N == 64 || N == 128 || N == 192 || N == 256, "Invalid TileShape_N.");
+  static_assert(N == 16 || N == 32 || N == 64 || N == 128 || N == 192 || N == 256, "Invalid TileShape_N.");
 
   using ElementSFA = typename detail::blockscaled::blockscaled_type<BuilderScheduleTag, ElementPairA>::sf_type;
   using ElementSFB = typename detail::blockscaled::blockscaled_type<BuilderScheduleTag, ElementPairB>::sf_type;
