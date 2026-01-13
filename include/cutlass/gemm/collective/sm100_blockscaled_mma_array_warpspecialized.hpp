@@ -124,9 +124,10 @@ struct CollectiveMma<
 
   using CtaShape_MNK = decltype(shape_div(TileShape{}, AtomThrShapeMNK{}));
   static_assert(shape<1>(CtaShape_MNK{}) == 192 or shape<1>(CtaShape_MNK{}) == 64 or
-      shape<1>(CtaShape_MNK{}) == 32 or shape<1>(CtaShape_MNK{}) == 128 or
+      shape<1>(CtaShape_MNK{}) == 8  or shape<1>(CtaShape_MNK{}) == 16 or shape<1>(CtaShape_MNK{}) == 32 or
+      shape<1>(CtaShape_MNK{}) == 128 or
       shape<1>(CtaShape_MNK{}) == 256,
-      "Cta N should be one of 32/64/128/192/256");
+      "Cta N should be one of 8/16/32/64/128/192/256");
 
   using ClusterTileShape = decltype(make_shape(get<0>(TileShape{})*get<0>(ClusterShape{}),get<1>(TileShape{})*get<1>(ClusterShape{}),get<2>(TileShape{})*get<2>(ClusterShape{})));
   using Sm1xxBlkScaledConfig = cutlass::detail::Sm1xxBlockScaledConfig<SFVecSize>;
@@ -134,6 +135,8 @@ struct CollectiveMma<
   static constexpr int IsCtaN192 = shape<1>(CtaShape_MNK{}) == 192;
   static constexpr int IsCtaN64 = shape<1>(CtaShape_MNK{}) == 64;
   static constexpr int IsCtaN32 = shape<1>(CtaShape_MNK{}) == 32;
+  static constexpr int IsCtaN16 = shape<1>(CtaShape_MNK{}) == 16;
+  static constexpr int IsCtaN8  = shape<1>(CtaShape_MNK{}) == 8;
   static int constexpr CTA_N_SF = cutlass::ceil_div(size<1>(CtaShape_MNK{}), Blk_MN{}) * Blk_MN{};
   // Tile shape used for partitioning Scale Factor B.
   // The M-dim does not affect the SFB, so just set it as the original TileShape;
@@ -915,7 +918,17 @@ struct CollectiveMma<
     Tensor tBgB = tBgB_nkl(_, get<1>(cta_coord_mnkl), _, get<3>(cta_coord_mnkl));
     Tensor tAgSFA = tAgSFA_mkl(_, get<0>(cta_coord_mnkl) / size(typename TiledMma::AtomThrID{}), _, get<3>(cta_coord_mnkl));
     int sfb_tile_n = get<1>(cta_coord_mnkl);
-    if constexpr (IsCtaN32) {
+    if constexpr (IsCtaN8) {
+      // SFB is stored / transferred at 128-column granularity (Blk_MN=128). For CTA-N=8,
+      // sixteen consecutive CTA tiles share the same SFB tile.
+      sfb_tile_n = sfb_tile_n / 16;
+    }
+    else if constexpr (IsCtaN16) {
+      // SFB is stored / transferred at 128-column granularity (Blk_MN=128). For CTA-N=16,
+      // eight consecutive CTA tiles share the same SFB tile.
+      sfb_tile_n = sfb_tile_n / 8;
+    }
+    else if constexpr (IsCtaN32) {
       // SFB is stored / transferred at 128-column granularity (Blk_MN=128). For CTA-N=32,
       // four consecutive CTA tiles share the same SFB tile.
       sfb_tile_n = sfb_tile_n / 4;
@@ -1009,6 +1022,20 @@ struct CollectiveMma<
         if (size<1>(cta_tile_coord) % 2 == 1) {
           tCtSFB_tmp.data() = tCtSFB_tmp.data().get() + 2;
         }
+        return tCtSFB_tmp;
+      }
+      else if constexpr (IsCtaN8) {
+        // Small CTA-N: SFB is addressed at 32-column granularity in TMEM (1 word == 32 columns).
+        // With CTA-N=8, four consecutive tiles share the same 32-column SFB region.
+        auto tCtSFB_tmp = tCtSFB;
+        tCtSFB_tmp.data() = tCtSFB_tmp.data().get() + ((size<1>(cta_tile_coord) % 16) / 4);
+        return tCtSFB_tmp;
+      }
+      else if constexpr (IsCtaN16) {
+        // Small CTA-N: SFB is addressed at 32-column granularity in TMEM (1 word == 32 columns).
+        // With CTA-N=16, two consecutive tiles share the same 32-column SFB region.
+        auto tCtSFB_tmp = tCtSFB;
+        tCtSFB_tmp.data() = tCtSFB_tmp.data().get() + ((size<1>(cta_tile_coord) % 8) / 2);
         return tCtSFB_tmp;
       }
       else if constexpr (IsCtaN32) {
