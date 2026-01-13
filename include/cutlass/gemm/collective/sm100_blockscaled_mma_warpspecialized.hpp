@@ -123,14 +123,16 @@ struct CollectiveMma<
 
   using CtaShape_MNK = decltype(shape_div(TileShape{}, AtomThrShapeMNK{}));
   static_assert(shape<1>(CtaShape_MNK{}) == 192 or shape<1>(CtaShape_MNK{}) == 64 or
-      shape<1>(CtaShape_MNK{}) == 128 or shape<1>(CtaShape_MNK{}) == 256,
-      "Cta N should be one of 64/128/192/256");
+      shape<1>(CtaShape_MNK{}) == 32 or shape<1>(CtaShape_MNK{}) == 128 or
+      shape<1>(CtaShape_MNK{}) == 256,
+      "Cta N should be one of 32/64/128/192/256");
 
   using ClusterTileShape = decltype(make_shape(get<0>(TileShape{})*get<0>(ClusterShape{}),get<1>(TileShape{})*get<1>(ClusterShape{}),get<2>(TileShape{})*get<2>(ClusterShape{})));
   using Sm1xxBlkScaledConfig = cutlass::detail::Sm1xxBlockScaledConfig<SFVecSize>;
   using Blk_MN = typename Sm1xxBlkScaledConfig::Blk_MN;
   static constexpr int IsCtaN192 = shape<1>(CtaShape_MNK{}) == 192;
   static constexpr int IsCtaN64 = shape<1>(CtaShape_MNK{}) == 64;
+  static constexpr int IsCtaN32 = shape<1>(CtaShape_MNK{}) == 32;
   static int constexpr CTA_N_SF = cutlass::ceil_div(size<1>(CtaShape_MNK{}), Blk_MN{}) * Blk_MN{};
   // Tile shape used for partitioning Scale Factor B.
   // The M-dim does not affect the SFB, so just set it as the original TileShape;
@@ -888,7 +890,13 @@ struct CollectiveMma<
     Tensor tAgA = tAgA_mkl(_, get<0>(cta_coord_mnkl) / size(typename TiledMma::AtomThrID{}), _, get<3>(cta_coord_mnkl));
     Tensor tBgB = tBgB_nkl(_, get<1>(cta_coord_mnkl), _, get<3>(cta_coord_mnkl));
     Tensor tAgSFA = tAgSFA_mkl(_, get<0>(cta_coord_mnkl) / size(typename TiledMma::AtomThrID{}), _, get<3>(cta_coord_mnkl));
-    Tensor tBgSFB = tBgSFB_nkl(_, get<1>(cta_coord_mnkl), _, get<3>(cta_coord_mnkl));
+    int sfb_tile_n = get<1>(cta_coord_mnkl);
+    if constexpr (IsCtaN32) {
+      // SFB is stored / transferred at 128-column granularity (Blk_MN=128). For CTA-N=32,
+      // four consecutive CTA tiles share the same SFB tile.
+      sfb_tile_n = sfb_tile_n / 4;
+    }
+    Tensor tBgSFB = tBgSFB_nkl(_, sfb_tile_n, _, get<3>(cta_coord_mnkl));
 
     auto barrier_token = mainloop_pipeline.producer_try_acquire(mainloop_pipe_producer_state);
 
@@ -971,6 +979,12 @@ struct CollectiveMma<
         if (size<1>(cta_tile_coord) % 2 == 1) {
           tCtSFB_tmp.data() = tCtSFB_tmp.data().get() + 2;
         }
+        return tCtSFB_tmp;
+      }
+      else if constexpr (IsCtaN32) {
+        // Move in increments of 32 columns of SFB (quarter of a 128-column scale block).
+        auto tCtSFB_tmp = tCtSFB;
+        tCtSFB_tmp.data() = tCtSFB_tmp.data().get() + (size<1>(cta_tile_coord) % 4);
         return tCtSFB_tmp;
       }
       else if constexpr (IsCtaN64) {
