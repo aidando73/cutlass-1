@@ -1001,6 +1001,7 @@ struct CollectiveMma<
     auto [mainloop_pipeline, accumulator_pipeline] = pipelines;
     auto [mainloop_pipe_consumer_state, accumulator_pipe_producer_state] = pipeline_states;
 
+    //b=128 cta_tile_coord: 0-16 0-3 0
     auto tCtSFB_mma = [tCtSFB = tCtSFB, cta_tile_coord]() {
       if constexpr (IsCtaN192) {
         // If this is an ODD tile, shift the TMEM start address for N=192 case by two words (ignores first 64 columns of SFB)
@@ -1013,7 +1014,13 @@ struct CollectiveMma<
       else if constexpr (IsCtaN32) {
         // Move in increments of 32 columns of SFB (quarter of a 128-column scale block).
         auto tCtSFB_tmp = tCtSFB;
-        tCtSFB_tmp.data() = tCtSFB_tmp.data().get() + (size<1>(cta_tile_coord) % 4);
+        cute::print(tCtSFB.data()); printf("\n");
+        // printf("cta_tile_coord: %d %d %d\n", static_cast<int>(get<0>(cta_tile_coord)), static_cast<int>(get<1>(cta_tile_coord)), static_cast<int>(get<2>(cta_tile_coord)));
+        if (blockIdx.x == 0 && threadIdx.x == 0) {
+          // printf("tCtSFB.data = "); cute::print(tCtSFB.data()); printf("\n");
+          printf("size(tCtSFB): %d\n", (int) cute::size(tCtSFB));
+        }
+        tCtSFB_tmp.data() = tCtSFB_tmp.data().get() + (size<1>(cta_tile_coord) % 4) * 4;
         return tCtSFB_tmp;
       }
       else if constexpr (IsCtaN64) {
