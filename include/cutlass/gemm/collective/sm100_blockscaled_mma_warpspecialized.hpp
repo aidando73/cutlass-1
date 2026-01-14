@@ -881,21 +881,50 @@ struct CollectiveMma<
     TileCoordMNKL const& cta_coord_mnkl,
     KTileIterator k_tile_iter, int k_tile_count) {
 
+    /// tAgA_mkl - partitioned gmem tensor for A
+    /// tBgB_nkl - partitioned gmem tensor for B
+    /// tAsA - partitioned smem tensor for A
+    /// tBsB - partitioned smem tensor for B
+    /// tAgSFA_mkl - partitioned gmem tensor for SFA
+    /// tBgSFB_nkl - partitioned gmem tensor for SFB
+    /// tAsSFA - partitioned tmem tensor for SFA
+    /// tAsSFB - partitioned tmem tensor for SFB
     auto [unused_k_tiles,
-          tAgA_mkl, tBgB_nkl, tAsA, tBsB,
-          tAgSFA_mkl, tBgSFB_nkl, tAsSFA, tBsSFB,
-          mcast_mask_a, mcast_mask_b, mcast_mask_sfa, mcast_mask_sfb] = load_inputs;
+          tAgA_mkl,
+          tBgB_nkl,
+          tAsA,
+          tBsB,
+          tAgSFA_mkl,
+          tBgSFB_nkl,
+          tAsSFA,
+          tBsSFB,
+          mcast_mask_a,
+          mcast_mask_b,
+          mcast_mask_sfa,
+          mcast_mask_sfb
+      ] = load_inputs;
 
+    // printf("unused_k_tiles: %d\n", unused_k_tiles);
+    // printf("tAgA_mkl: %d\n", tAgA_mkl);
+    // printf("tBgB_nkl: %d\n", tBgB_nkl);
+    // printf("tAsA: %d\n", tAsA);
+    // printf("tBsB: %d\n", tBsB);
+    // printf("tAgSFA_mkl: %d\n", tAgSFA_mkl);
+    // printf("tBgSFB_nkl: %d\n", tBgSFB_nkl);
+    // printf("tAsSFA: %d\n", tAsSFA);
+    // printf("tBsSFB: %d\n", tBsSFB);
+    
     // slice out the work coord from partitioned tensors
     Tensor tAgA = tAgA_mkl(_, get<0>(cta_coord_mnkl) / size(typename TiledMma::AtomThrID{}), _, get<3>(cta_coord_mnkl));
     Tensor tBgB = tBgB_nkl(_, get<1>(cta_coord_mnkl), _, get<3>(cta_coord_mnkl));
     Tensor tAgSFA = tAgSFA_mkl(_, get<0>(cta_coord_mnkl) / size(typename TiledMma::AtomThrID{}), _, get<3>(cta_coord_mnkl));
     int sfb_tile_n = get<1>(cta_coord_mnkl);
-    if constexpr (IsCtaN32) {
-      // SFB is stored / transferred at 128-column granularity (Blk_MN=128). For CTA-N=32,
-      // four consecutive CTA tiles share the same SFB tile.
-      sfb_tile_n = sfb_tile_n / 4;
-    }
+    // printf("cta_coord_mnkl: %d %d %d %d\n", static_cast<int>(get<0>(cta_coord_mnkl)), static_cast<int>(get<1>(cta_coord_mnkl)), static_cast<int>(get<2>(cta_coord_mnkl)), static_cast<int>(get<3>(cta_coord_mnkl)));
+    // if constexpr (IsCtaN32) {
+    //   // SFB is stored / transferred at 128-column granularity (Blk_MN=128). For CTA-N=32,
+    //   // four consecutive CTA tiles share the same SFB tile.
+    //   sfb_tile_n = sfb_tile_n / 4;
+    // }
     Tensor tBgSFB = tBgSFB_nkl(_, sfb_tile_n, _, get<3>(cta_coord_mnkl));
 
     auto barrier_token = mainloop_pipeline.producer_try_acquire(mainloop_pipe_producer_state);

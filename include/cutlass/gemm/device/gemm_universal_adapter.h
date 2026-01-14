@@ -48,6 +48,7 @@
 #if !defined(__CUDACC_RTC__)
 #include "cutlass/cluster_launch.hpp"
 #include "cutlass/trace.h"
+#include <cstdlib>  // getenv
 #endif // !defined(__CUDACC_RTC__)
 
 // 2.x
@@ -375,6 +376,9 @@ public:
 
     // configure smem size and carveout
     int smem_size = GemmKernel::SharedStorageSize;
+
+    printf("[fireworks][cutlass] grid=(%u,%u,%u) block=(%u,%u,%u) smem_bytes=%d\n",
+            grid.x, grid.y, grid.z, block.x, block.y, block.z, smem_size);
 
     Status launch_result{ Status::kSuccess };
     // Use extended launch API only for mainloops that use it
