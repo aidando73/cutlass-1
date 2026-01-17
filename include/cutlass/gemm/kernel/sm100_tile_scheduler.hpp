@@ -593,10 +593,27 @@ public:
                           TileShape tile_shape_mnk,
                           AtomThrShape atom_thr_shape_mnk,
                           ClusterShape cluster_shape_mnk) {
+    // Note: tile_shape_mnk is typically CuTe static integers (e.g., cute::_128) which are callable via operator()(),
+    // but problem_shape_mnkl is often runtime integers (e.g., int32_t/int64_t). Use explicit casts so this works for both.
+    // printf("take<0,2>(tile_shape_mnk): %lld %lld\n",
+    //        (long long) get<0>(take<0,2>(tile_shape_mnk)),
+    //        (long long) get<1>(take<0,2>(tile_shape_mnk)));
+    // printf("select<0,1,3>(problem_shape_mnkl): %lld %lld %lld\n",
+    //        (long long) get<0>(select<0,1,3>(problem_shape_mnkl)),
+    //        (long long) get<1>(select<0,1,3>(problem_shape_mnkl)),
+    //        (long long) get<2>(select<0,1,3>(problem_shape_mnkl)));
     auto [tiles_m, tiles_n, tiles_l] = product_each(ceil_div(select<0,1,3>(problem_shape_mnkl), take<0,2>(tile_shape_mnk)));
+    // printf("tiles_m: %lld\n", (long long) tiles_m);
+    // printf("tiles_n: %lld\n", (long long) tiles_n);
+    // printf("tiles_l: %lld\n", (long long) tiles_l);
+    // In our case atom_thr_shape_mnk is (1, 1, 1) and cluster shape is (1, 1, 1) so this doesn't do anything - but TODO: at some point we should figure out what it does
     auto ctas_m = round_nearest(tiles_m * size<0>(atom_thr_shape_mnk), size<0>(cluster_shape_mnk));
     auto ctas_n = round_nearest(tiles_n * size<1>(atom_thr_shape_mnk), size<1>(cluster_shape_mnk));
     auto ctas_l = tiles_l;
+
+    // printf("ctas_m: %lld\n", (long long) ctas_m);
+    // printf("ctas_n: %lld\n", (long long) ctas_n);
+    // printf("ctas_l: %lld\n", (long long) ctas_l);
 
     return {static_cast<uint32_t>(ctas_m),
             static_cast<uint32_t>(ctas_n),

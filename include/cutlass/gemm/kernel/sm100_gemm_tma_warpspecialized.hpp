@@ -35,6 +35,7 @@
 #include "cutlass/workspace.h"
 #include "cutlass/kernel_hardware_info.hpp"
 #include "cutlass/detail/cluster.hpp"
+#include "cutlass/detail/dependent_false.hpp"
 #include "cutlass/arch/grid_dependency_control.h"
 #include "cutlass/fast_math.h"
 #include "cute/arch/cluster_sm90.hpp"
@@ -51,6 +52,10 @@
 #include "cute/tensor.hpp"
 #include "cute/arch/tmem_allocator_sm100.hpp"
 #include "cute/atom/mma_atom.hpp"
+
+// Fireworks debug toggle: uncomment to force a compile-time failure that prints
+// the inferred types for problem shape dimensions (M/N/K/L) inside operator().
+#define FIREWORKS_CUTLASS_DEBUG_SHAPE_TYPES
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -384,8 +389,8 @@ public:
   get_grid_shape(Params const& params) {
     // NOTE cluster_shape here is the major cluster shape, not fallback one
     auto cluster_shape = cutlass::detail::select_cluster_shape(ClusterShape{}, params.hw_info.cluster_shape);
-
     auto problem_shape_MNKL = append<4>(params.problem_shape, Int<1>{});
+    // static_assert(cutlass::detail::dependent_false<TileScheduler>, "TileScheduler =");
     return TileScheduler::get_grid_shape(
         params.scheduler,
         problem_shape_MNKL,
@@ -415,21 +420,38 @@ public:
 
     // Account for more than one epilogue warp
     int warp_idx = canonical_warp_idx_sync();
+    // printf("warp_idx: %d\n", warp_idx);
+    // enum - which role does this warp have?
     WarpCategory warp_category = warp_idx < static_cast<int>(WarpCategory::Epilogue) ? WarpCategory(warp_idx)
                                                                                      : WarpCategory::Epilogue;
-
+    // boolean - elected thread of singleton work
     uint32_t lane_predicate = cute::elect_one_sync();
+    // printf("lane_predicate: %d\n", lane_predicate);
+    // (1, 1, 1)
     auto cluster_shape = cutlass::detail::select_cluster_shape(ClusterShape{});
     int cluster_size = size(cluster_shape);
     uint32_t cta_rank_in_cluster = cute::block_rank_in_cluster();
     bool is_first_cta_in_cluster = cta_rank_in_cluster == 0;
+    // Always 0 in mxfp8 case - can be 1 in other cases
     int cta_coord_v = cta_rank_in_cluster % size<0>(typename TiledMma::AtomThrID{});
+    // Always true in mxfp8 case
     bool is_mma_leader_cta = cta_coord_v == 0;
-    constexpr bool has_mma_peer_cta = size(AtomThrShapeMNK{}) == 2;
+    // printf("is_mma_leader_cta: %d\n", is_mma_leader_cta);
+    // has_mma_peer_cta: False
+    constexpr bool has_mma_peer_cta = size(AtomThrShapeMNK{}) == 2; // TODO: What is an atom? And what are atom thread shapes?
+    // printf("shape<0>(AtomThrShapeMNK{}): %d\n", shape<0>(AtomThrShapeMNK{})());
+    // printf("has_mma_peer_cta: %d\n", has_mma_peer_cta);
+    // mma_peer_cta_rank: 0
     [[maybe_unused]] uint32_t mma_peer_cta_rank = has_mma_peer_cta ? cta_rank_in_cluster ^ 1 : cta_rank_in_cluster;
-
+    // printf("mma_peer_cta_rank: %d\n", mma_peer_cta_rank);
+    
     // Kernel level shared memory storage
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
+    // print("sizeof(SharedStorage): %d\n", sizeof(SharedStorage));
+    // printf("sizeof(SharedStorage.pipelines): %d\n", sizeof(shared_storage.pipelines));
+    // printf("sizeof(SharedStorage.tensors): %d\n", sizeof(shared_storage.tensors));
+    // printf("sizeof(SharedStorage.clc_response): %d\n", sizeof(shared_storage.clc_response));
+    // printf("sizeof(SharedStorage.tmem_base_ptr): %d\n", sizeof(shared_storage.tmem_base_ptr));
 
     // In a warp specialized kernel, collectives expose data movement and compute operations separately
     CollectiveMainloop collective_mainloop(params.mainloop, cluster_shape, cta_rank_in_cluster);
